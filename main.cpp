@@ -304,11 +304,11 @@ int main()
 
 		temp_sensor1->get_temperature(&value1);
 		humidity_sensor->get_humidity(&value2);
-		printf("HTS221: [temp] %7s°C,   [hum] %s%%\r\n", printDouble(buffer1, value1), printDouble(buffer2, value2));
+		printf("HTS221: [temp] %7sÂ°C,   [hum] %s%%\r\n", printDouble(buffer1, value1), printDouble(buffer2, value2));
 
 		temp_sensor2->get_fahrenheit(&value1);
 		pressure_sensor->get_pressure(&value2);
-		printf("LPS25H: [temp] %7s°F, [press] %smbar\r\n", printDouble(buffer1, value1), printDouble(buffer2, value2));
+		printf("LPS25H: [temp] %7sÂ°F, [press] %smbar\r\n", printDouble(buffer1, value1), printDouble(buffer2, value2));
 
 		printf("---\r\n");
 
