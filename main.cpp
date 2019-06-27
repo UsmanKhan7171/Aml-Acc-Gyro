@@ -158,10 +158,6 @@ int main()
 	int32_t axes[3];
 
 	printf("\r\n--- Starting new run ---\r\n");
-
-
-
-	printf("Starting Application\r\n");
     mbed_trace_init();
 
     INTERFACE_CLASS *interface = new INTERFACE_CLASS();
@@ -308,11 +304,11 @@ int main()
 
 		temp_sensor1->get_temperature(&value1);
 		humidity_sensor->get_humidity(&value2);
-		printf("HTS221: [temp] %7sÂ°C,   [hum] %s%%\r\n", printDouble(buffer1, value1), printDouble(buffer2, value2));
+		printf("HTS221: [temp] %7s°C,   [hum] %s%%\r\n", printDouble(buffer1, value1), printDouble(buffer2, value2));
 
 		temp_sensor2->get_fahrenheit(&value1);
 		pressure_sensor->get_pressure(&value2);
-		printf("LPS25H: [temp] %7sÂ°F, [press] %smbar\r\n", printDouble(buffer1, value1), printDouble(buffer2, value2));
+		printf("LPS25H: [temp] %7s°F, [press] %smbar\r\n", printDouble(buffer1, value1), printDouble(buffer2, value2));
 
 		printf("---\r\n");
 
@@ -371,7 +367,7 @@ int main()
 		sprintf(AccGyr,"%d,%d,%d",axes[0],axes[1],axes[2]);
 		printf("Gyro: %s \r\n",AccGyr);
 		len=sprintf(buf,
-				"{\"IMEI\":\"%s\",\"Time\":\"%s\",\"G\":\"%s\"}",
+				"{\"IMEI\":\"%s\",\"DT\":\"%s\",\"G\":\"%s\"}",
 				imei,time_buff,AccGyr
 				);
 		if(len < 0) {
@@ -401,7 +397,7 @@ int main()
 		sprintf(AccGyr,"%d,%d,%d",axes[0],axes[1],axes[2]);
 		printf("Accelero: %s \r\n",AccGyr);
 		len=sprintf(buf,
-				"{\"IMEI\":\"%s\",\"Time\":\"%s\", \"A\":\"%s\"}",
+				"{\"IMEI\":\"%s\",\"DT\":\"%s\", \"A\":\"%s\"}",
 				imei,time_buff,AccGyr
 				);
 		len = strlen(buf);
