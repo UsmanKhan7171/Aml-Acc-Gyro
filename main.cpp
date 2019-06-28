@@ -50,7 +50,7 @@
 #define PASSWORD    	 NULL
 #define LED_ON  		 MBED_CONF_APP_LED_ON
 #define LED_OFF 		 MBED_CONF_APP_LED_OFF
-#define WAIT_INTERVAL  	 10
+#define WAIT_INTERVAL  	 7
 #define DEFAULT_RTC_TIME 536898160
 #define TIME_ZONE_OFFSET 0 // 18000 for Lahore, it has to be 0 for UK
 
@@ -184,13 +184,11 @@ int main()
 	unsigned short id = 0;
 	int len=0;
     char *time_buff, *src, *dst, *buf2;
+    time_t seconds;
 
 	humidity_sensor->read_id(&id2);
-	printf("HTS221  humidity & temperature    = 0x%X\r\n", id2);
 	pressure_sensor->read_id(&id2);
-	printf("LPS25H  pressure & temperature    = 0x%X\r\n", id2);
 	magnetometer->read_id(&id2);
-	printf("LIS3MDL magnetometer              = 0x%X\r\n", id2);
 	gyroscope->read_id(&id2);
 	printf("LSM6DS0 accelerometer & gyroscope = 0x%X\r\n", id2);
 
@@ -300,20 +298,8 @@ int main()
     const size_t buf_size = 200;
 
     while(1) {
-		printf("\r\n");
-
-		temp_sensor1->get_temperature(&value1);
-		humidity_sensor->get_humidity(&value2);
-		printf("HTS221: [temp] %7sÂ°C,   [hum] %s%%\r\n", printDouble(buffer1, value1), printDouble(buffer2, value2));
-
-		temp_sensor2->get_fahrenheit(&value1);
-		pressure_sensor->get_pressure(&value2);
-		printf("LPS25H: [temp] %7sÂ°F, [press] %smbar\r\n", printDouble(buffer1, value1), printDouble(buffer2, value2));
-
-		printf("---\r\n");
-
-		wait(1.5);
-        time_t seconds = time(NULL) + TIME_ZONE_OFFSET;
+    	printf("---\r\n");
+        seconds = time(NULL) + TIME_ZONE_OFFSET;
         time_buff = ctime(&seconds);
         printf("Current Time:  %s\r\n", time_buff);
         wait(1);
@@ -359,13 +345,9 @@ int main()
 		char *buf = new char[buf_size];
 		char *AccGyr = new char[buf_size];
 
-		magnetometer->get_m_axes(axes);
-		printf("LIS3MDL [mag/mgauss]:  %7ld, %7ld, %7ld\r\n", axes[0], axes[1], axes[2]);
-
 		gyroscope->get_g_axes(axes);
 		printf("LSM6DS0 [gyro/mdps]:   %7ld, %7ld, %7ld\r\n", axes[0], axes[1], axes[2]);
 		sprintf(AccGyr,"%d,%d,%d",axes[0],axes[1],axes[2]);
-		printf("Gyro: %s \r\n",AccGyr);
 		len=sprintf(buf,
 				"{\"IMEI\":\"%s\",\"DT\":\"%s\",\"G\":\"%s\"}",
 				imei,time_buff,AccGyr
@@ -395,9 +377,8 @@ int main()
 		accelerometer->get_x_axes(axes);
 		printf("LSM6DS0 [acc/mg]:      %7ld, %7ld, %7ld\r\n", axes[0], axes[1], axes[2]);
 		sprintf(AccGyr,"%d,%d,%d",axes[0],axes[1],axes[2]);
-		printf("Accelero: %s \r\n",AccGyr);
 		len=sprintf(buf,
-				"{\"IMEI\":\"%s\",\"DT\":\"%s\", \"A\":\"%s\"}",
+				"{\"IMEI\":\"%s\",\"DT\":\"%s\",\"A\":\"%s\"}",
 				imei,time_buff,AccGyr
 				);
 		len = strlen(buf);
