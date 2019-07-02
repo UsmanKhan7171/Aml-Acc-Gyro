@@ -6,6 +6,7 @@ const char MQTT_CLIENT_ID[] = ""; // set to IMEI of device later in main
 const char MQTT_USERNAME[] = "Ublox_2";
 const char MQTT_PASSWORD[] = "";
 const char MQTT_TOPIC_PUB[] = "topic/AccGyrTopic";
+const char MQTT_TOPIC_STATE[] = "topic/DeviceState";
 const char MQTT_TOPIC_SUB[] = "topic/AccGyrTopic";
 const char MQTT_TOPIC_HR[] = "topic/AccGyrTopic";
 

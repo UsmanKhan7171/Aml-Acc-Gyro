@@ -37,23 +37,25 @@
 #include "mbedtls/error.h"
 #include "battery-gauge-bq27441/battery_gauge_bq27441.h"
 #include "x_nucleo_iks01a1.h"
+#include "math.h"
 
 
-#define MQTTCLIENT_QOS1  0
-#define MQTTCLIENT_QOS2  0
-#define PIN_I2C_SDA  	 PC_9
-#define PIN_I2C_SCL  	 PA_8
-#define INTERFACE_CLASS  UbloxATCellularInterface
-#define PIN 			 "0000"
-#define APN         	 NULL
-#define USERNAME    	 NULL
-#define PASSWORD    	 NULL
-#define LED_ON  		 MBED_CONF_APP_LED_ON
-#define LED_OFF 		 MBED_CONF_APP_LED_OFF
-#define WAIT_INTERVAL  	 7
-#define DEFAULT_RTC_TIME 536898160
-#define TIME_ZONE_OFFSET 0 // 18000 for Lahore, it has to be 0 for UK
-
+#define MQTTCLIENT_QOS1  	0
+#define MQTTCLIENT_QOS2  	0
+#define PIN_I2C_SDA  	 	PC_9
+#define PIN_I2C_SCL  	 	PA_8
+#define INTERFACE_CLASS  	UbloxATCellularInterface
+#define PIN 			 	"0000"
+#define APN         	 	NULL
+#define USERNAME    	 	NULL
+#define PASSWORD    	 	NULL
+#define LED_ON  		 	MBED_CONF_APP_LED_ON
+#define LED_OFF 		 	MBED_CONF_APP_LED_OFF
+#define WAIT_INTERVAL  	 	7
+#define DEFAULT_RTC_TIME 	536898160
+#define TIME_ZONE_OFFSET 	0 // 18000 for Lahore, it has to be 0 for UK
+#define STATETHRESHOLD	 	900
+#define STATE_UPDATE_FREQ	5
 
 
 
@@ -146,18 +148,20 @@ void publish_packet(MQTT::Message &message, char * buf , unsigned short & id , i
 	message.id = id;
 	message.payloadlen = len;
 	printf("Packet Sent %s \r\n", buf);
-	rc_publish = mqttClient->publish(MQTT_TOPIC_HR, message);
+	rc_publish = mqttClient->publish(MQTT_TOPIC_PUB, message);
 	id++;
 }
 
 int main()
 {
+	printf("\r\n--- Starting new run ---\r\n");
+
 	uint8_t id2;
 	float value1, value2;
 	char buffer1[32], buffer2[32];
 	int32_t axes[3];
 
-	printf("\r\n--- Starting new run ---\r\n");
+
     mbed_trace_init();
 
     INTERFACE_CLASS *interface = new INTERFACE_CLASS();
@@ -296,6 +300,8 @@ int main()
     printf("\r\n");
 
     const size_t buf_size = 200;
+    int acc_states = 0;
+    char* state;
 
     while(1) {
     	printf("---\r\n");
@@ -344,6 +350,8 @@ int main()
 
 		char *buf = new char[buf_size];
 		char *AccGyr = new char[buf_size];
+		int32_t *squared_values = new int32_t[3];
+		double *mean_square = new double[STATE_UPDATE_FREQ];
 
 		gyroscope->get_g_axes(axes);
 		printf("LSM6DS0 [gyro/mdps]:   %7ld, %7ld, %7ld\r\n", axes[0], axes[1], axes[2]);
@@ -352,7 +360,7 @@ int main()
 				"{\"IMEI\":\"%s\",\"DT\":\"%s\",\"G\":\"%s\"}",
 				imei,time_buff,AccGyr
 				);
-		if(len < 0) {
+		if(len < 0 || len >= 80 ) {
 			printf("ERROR: sprintf() returns %d \r\n", len);
 			continue;
 		}
@@ -376,13 +384,55 @@ int main()
 
 		accelerometer->get_x_axes(axes);
 		printf("LSM6DS0 [acc/mg]:      %7ld, %7ld, %7ld\r\n", axes[0], axes[1], axes[2]);
+
+		for(int z = 0; z<3; z++)
+			squared_values[z] = pow(axes[z],2);
+
+		printf("Squares Values [acc/mg]:      %7ld, %7ld, %7ld\r\n", squared_values[0], squared_values[1], squared_values[2]);
+
+		mean_square[acc_states] = sqrt(squared_values[0] + squared_values[1] + squared_values[2]);
+
+		printf("Mangitude [acc/mg]:      %.2f \r\n", mean_square[acc_states]);
+
+		if( acc_states == STATE_UPDATE_FREQ )
+		{
+			for(int w = 0; w<STATE_UPDATE_FREQ; w++){
+				if( mean_square[w] > STATETHRESHOLD )
+					state = "moving";
+				else{
+					state = "stationary";
+					break;
+				}
+			}
+			len=sprintf(buf,
+						"{\"IMEI\":\"%s\",\"State\":\"%s\"}",
+						imei,state
+						);
+			len = strlen(buf);
+			if(len < 0 || len >= 80) {
+				printf("ERROR: sprintf() returns %d \r\n", len);
+				continue;
+			}
+			printf("Packet ID %d \r\n",id);
+			message.payload = (void*)buf;
+			message.qos = MQTT::QOS0;
+			message.id = id;
+			message.payloadlen = len;
+			printf("Packet Sent %s \r\n", buf);
+			rc_publish = mqttClient->publish(MQTT_TOPIC_STATE, message);
+			id++;
+			acc_states = 0;
+		}
+		else
+			acc_states++;
+
 		sprintf(AccGyr,"%d,%d,%d",axes[0],axes[1],axes[2]);
 		len=sprintf(buf,
 				"{\"IMEI\":\"%s\",\"DT\":\"%s\",\"A\":\"%s\"}",
 				imei,time_buff,AccGyr
 				);
 		len = strlen(buf);
-		if(len < 0) {
+		if(len < 0 || len >= 80) {
 			printf("ERROR: sprintf() returns %d \r\n", len);
 			continue;
 		}
@@ -399,6 +449,8 @@ int main()
 		}
 		delete[] buf;
 		delete[] AccGyr;
+		delete[] mean_square;
+		delete[] squared_values;
 	 }
 
 		wait(WAIT_INTERVAL);
