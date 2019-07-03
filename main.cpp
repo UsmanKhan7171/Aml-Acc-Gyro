@@ -364,6 +364,8 @@ int main()
 			printf("Packet Sent %s \r\n", buf);
 			rc_publish = mqttClient->publish(MQTT_TOPIC_STATE, message);
 			id++;
+			if(id == 100)
+				id =0;
 			acc_states = 0;
 			led = LED_ON;
 			wait(1);
