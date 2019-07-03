@@ -51,11 +51,12 @@
 #define PASSWORD    	 	NULL
 #define LED_ON  		 	MBED_CONF_APP_LED_ON
 #define LED_OFF 		 	MBED_CONF_APP_LED_OFF
-#define WAIT_INTERVAL  	 	7
+#define WAIT_INTERVAL  	 	1
 #define DEFAULT_RTC_TIME 	536898160
 #define TIME_ZONE_OFFSET 	0 // 18000 for Lahore, it has to be 0 for UK
-#define STATETHRESHOLD	 	900
-#define STATE_UPDATE_FREQ	5
+#define WALKINGTHRESHOLD	1000
+#define RUNNINGTHRESHOLD	2000
+#define STATE_UPDATE_FREQ	3
 
 
 
@@ -142,12 +143,11 @@ void client_reset(MQTT::Client<MQTTNetwork, Countdown>* mqttClient,bool isSubscr
 
 void publish_packet(MQTT::Message &message, char * buf , unsigned short & id , int &rc_publish , MQTT::Client<MQTTNetwork, Countdown>* mqttClient, int &len)
 {
-	printf("Packet ID %d \r\n",id);
+//	printf("Packet ID %d \r\n",id);
 	message.payload = (void*)buf;
 	message.qos = MQTT::QOS0;
 	message.id = id;
 	message.payloadlen = len;
-	printf("Packet Sent %s \r\n", buf);
 	rc_publish = mqttClient->publish(MQTT_TOPIC_PUB, message);
 	id++;
 }
@@ -161,8 +161,7 @@ int main()
 	char buffer1[32], buffer2[32];
 	int32_t axes[3];
 
-
-    mbed_trace_init();
+	mbed_trace_init();
 
     INTERFACE_CLASS *interface = new INTERFACE_CLASS();
     MQTTNetwork* mqttNetwork = NULL;
@@ -177,11 +176,6 @@ int main()
 	/* Retrieve the composing elements of the expansion board */
 	static GyroSensor *gyroscope = mems_expansion_board->GetGyroscope();
 	static MotionSensor *accelerometer = mems_expansion_board->GetAccelerometer();
-	static MagneticSensor *magnetometer = mems_expansion_board->magnetometer;
-	static HumiditySensor *humidity_sensor = mems_expansion_board->ht_sensor;
-	static PressureSensor *pressure_sensor = mems_expansion_board->pt_sensor;
-	static TempSensor *temp_sensor1 = mems_expansion_board->ht_sensor;
-	static TempSensor *temp_sensor2 = mems_expansion_board->pt_sensor;
 
     bool isSubscribed = false;
 	int rc_publish;
@@ -190,13 +184,8 @@ int main()
     char *time_buff, *src, *dst, *buf2;
     time_t seconds;
 
-	humidity_sensor->read_id(&id2);
-	pressure_sensor->read_id(&id2);
-	magnetometer->read_id(&id2);
 	gyroscope->read_id(&id2);
 	printf("LSM6DS0 accelerometer & gyroscope = 0x%X\r\n", id2);
-
-	wait(3);
 
 	MQTT::Message message;
 
@@ -302,29 +291,8 @@ int main()
     const size_t buf_size = 200;
     int acc_states = 0;
     char* state;
-
+    double *mean_square = new double[STATE_UPDATE_FREQ]; // Accumulates magnitude of ACC values, for comparison with threshold.
     while(1) {
-    	printf("---\r\n");
-        seconds = time(NULL) + TIME_ZONE_OFFSET;
-        time_buff = ctime(&seconds);
-        printf("Current Time:  %s\r\n", time_buff);
-        wait(1);
-		src = time_buff;
-		for (src = dst = time_buff; *src != '\0'; src++) {
-		    *dst = *src;
-		    if(*dst != ' '){
-			   if (*dst != '\n') dst++;
-		    } else if(*dst == ' '){
-			   *dst = '-';
-			   dst++;
-		    }
-		}
-		*dst = '\0';
-
-		if (gauge.init(&i2C)){
-			if (gauge.getRemainingPercentage(&battery_pctg))
-				printf("Remaining battery percentage: %d%%.\r\n", (int) battery_pctg);
-		}
     	/* Check connection */
         if(!mqttClient->isConnected()){
             printf("Disconnecting Client.\r\n");
@@ -349,59 +317,34 @@ int main()
 		message.dup = false;
 
 		char *buf = new char[buf_size];
-		char *AccGyr = new char[buf_size];
-		int32_t *squared_values = new int32_t[3];
-		double *mean_square = new double[STATE_UPDATE_FREQ];
-
-		gyroscope->get_g_axes(axes);
-		printf("LSM6DS0 [gyro/mdps]:   %7ld, %7ld, %7ld\r\n", axes[0], axes[1], axes[2]);
-		sprintf(AccGyr,"%d,%d,%d",axes[0],axes[1],axes[2]);
-		len=sprintf(buf,
-				"{\"IMEI\":\"%s\",\"DT\":\"%s\",\"G\":\"%s\"}",
-				imei,time_buff,AccGyr
-				);
-		if(len < 0 || len >= 80 ) {
-			printf("ERROR: sprintf() returns %d \r\n", len);
-			continue;
-		}
-		publish_packet(message, buf , id , rc_publish , mqttClient , len); // Publish Temperature
-
-		seconds = time(NULL) + TIME_ZONE_OFFSET;
-		time_buff = ctime(&seconds);
-		printf("Current Time:  %s\r\n", time_buff);
-		wait(1);
-		src = time_buff;
-		for (src = dst = time_buff; *src != '\0'; src++) {
-			*dst = *src;
-			if(*dst != ' '){
-				if (*dst != '\n') dst++;
-			} else if(*dst == ' '){
-				*dst = '-';
-				dst++;
-			}
-		}
-		*dst = '\0';
+		int32_t *squared_values = new int32_t[3]; // Stores the squared values of Acc 3d values.
 
 		accelerometer->get_x_axes(axes);
-		printf("LSM6DS0 [acc/mg]:      %7ld, %7ld, %7ld\r\n", axes[0], axes[1], axes[2]);
 
 		for(int z = 0; z<3; z++)
-			squared_values[z] = pow(axes[z],2);
+			squared_values[z] = pow(axes[z],2); // Takes square of the three dimensional values of Accelerometer.
 
-		printf("Squares Values [acc/mg]:      %7ld, %7ld, %7ld\r\n", squared_values[0], squared_values[1], squared_values[2]);
+		mean_square[acc_states] =  sqrt(squared_values[0] + // Adds the squared values and takes square-root of them to find magnitude.
+										squared_values[1] +
+										squared_values[2]);
 
-		mean_square[acc_states] = sqrt(squared_values[0] + squared_values[1] + squared_values[2]);
-
-		printf("Mangitude [acc/mg]:      %.2f \r\n", mean_square[acc_states]);
-
-		if( acc_states == STATE_UPDATE_FREQ )
+		if( acc_states == STATE_UPDATE_FREQ )		// deciding states for last three consecutive values by comparing them to threshold
 		{
-			for(int w = 0; w<STATE_UPDATE_FREQ; w++){
-				if( mean_square[w] > STATETHRESHOLD )
-					state = "moving";
+			for(int w = 0; w < STATE_UPDATE_FREQ ; w++){
+				if( mean_square[w] > RUNNINGTHRESHOLD ){	// If all three values are greater than this threshold,device's state = RUNNING
+					state = "RUNNING";
+					printf("State %d [acc/mg]:      %.2f \r\n",w, mean_square[w]);
+					continue;
+				}
+				else if( mean_square[w] > WALKINGTHRESHOLD ){
+					state = "WALKING";						// If all three values are greater than this threshold,device's state = WALKING
+					printf("State %d [acc/mg]:     %.2f \r\n",w, mean_square[w]);
+					continue;
+				}
 				else{
-					state = "stationary";
-					break;
+					state = "STATIONARY";					// If all three values are lesser than the above thresholds,device's state = STATIONARY
+					printf("State %d [acc/mg]:      %.2f \r\n",w, mean_square[w]);
+					continue;
 				}
 			}
 			len=sprintf(buf,
@@ -413,7 +356,7 @@ int main()
 				printf("ERROR: sprintf() returns %d \r\n", len);
 				continue;
 			}
-			printf("Packet ID %d \r\n",id);
+
 			message.payload = (void*)buf;
 			message.qos = MQTT::QOS0;
 			message.id = id;
@@ -422,40 +365,27 @@ int main()
 			rc_publish = mqttClient->publish(MQTT_TOPIC_STATE, message);
 			id++;
 			acc_states = 0;
+			led = LED_ON;
+			wait(1);
+			led = LED_OFF;
+
+			if(rc_publish != MQTT::SUCCESS) {
+				printf("ERROR: rc from MQTT publish is %d\r\n", rc_publish);
+				printf("Disconnecting Client.\r\n");
+				client_reset(mqttClient,isSubscribed,mqttNetwork,interface);
+			}
+			delete[] buf;
+			delete[] squared_values;
 		}
 		else
 			acc_states++;
 
-		sprintf(AccGyr,"%d,%d,%d",axes[0],axes[1],axes[2]);
-		len=sprintf(buf,
-				"{\"IMEI\":\"%s\",\"DT\":\"%s\",\"A\":\"%s\"}",
-				imei,time_buff,AccGyr
-				);
-		len = strlen(buf);
-		if(len < 0 || len >= 80) {
-			printf("ERROR: sprintf() returns %d \r\n", len);
-			continue;
-		}
-		publish_packet(message, buf , id , rc_publish , mqttClient , len); // Publish Humidity
-	 
-		led = LED_ON;
-		wait(1);
-		led = LED_OFF;
 
-		if(rc_publish != MQTT::SUCCESS) {
-			printf("ERROR: rc from MQTT publish is %d\r\n", rc_publish);
-			printf("Disconnecting Client.\r\n");
-			client_reset(mqttClient,isSubscribed,mqttNetwork,interface);
-		}
-		delete[] buf;
-		delete[] AccGyr;
-		delete[] mean_square;
-		delete[] squared_values;
 	 }
 
-		wait(WAIT_INTERVAL);
+//		wait(WAIT_INTERVAL);
       }
-
+    delete[] mean_square;
     printf("The client has disconnected.\r\n");
 
     if(mqttClient) {
